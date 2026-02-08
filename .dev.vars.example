@@ -3,3 +3,4 @@ GROK_API_KEY=YOUR_API_KEY
 GROK_MODEL=grok-2-latest
 GROK_TIMEOUT_SECONDS=60
 GROK_PUBLIC_TOKEN=your-access-token
+ALLOWED_ORIGINS=https://your-host.example

@@ -1,0 +1,8 @@
+{
+  "name": "grok-search-mcp-worker",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}

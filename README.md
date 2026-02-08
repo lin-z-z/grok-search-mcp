@@ -1,56 +1,38 @@
-# grok-search-mcp
+# grok-search-mcp (Cloudflare Worker)
 
-## 本地启动
+## 部署
 
-先复制 `.env.example` 为 `.env` 并填写你的配置。
-
-```powershell
-python mcp_server.py --transport http --host 0.0.0.0 --port 8000 --path /mcp/
-```
-
-## Docker 启动
+先配置机密（Secrets）：
 
 ```powershell
-docker build -t grok-search-mcp .
-docker run --rm -it -p 8000:8000 ^
-  --env-file .env ^
-  -e MCP_TRANSPORT="http" ^
-  -e MCP_HOST="0.0.0.0" ^
-  -e MCP_PORT="8000" ^
-  -e MCP_PATH="/mcp/" ^
-  grok-search-mcp
+npx wrangler secret put GROK_BASE_URL
+npx wrangler secret put GROK_API_KEY
+npx wrangler secret put GROK_PUBLIC_TOKEN
 ```
 
-## Docker Compose 启动
+可选环境变量：
+`GROK_MODEL`, `GROK_TIMEOUT_SECONDS`, `GROK_EXTRA_BODY_JSON`, `GROK_EXTRA_HEADERS_JSON`, `ALLOWED_ORIGINS`
 
-先复制 `.env.example` 为 `.env` 并填写你的配置。
+部署：
 
 ```powershell
-docker compose up --build
+npx wrangler deploy
 ```
 
-## MCP 参数设置
+## 本地调试
 
-### 工具调用参数
-
-```json
-{
-  "tool": "grok_search",
-  "args": {
-    "query": "今天有什么新消息？"
-  }
-}
+```powershell
+copy .dev.vars.example .dev.vars
+npx wrangler dev
 ```
 
-说明：上游 `base_url/api_key` 由服务端 `.env` 配置，用户不需要也不能在调用时传入。
-
-### MCP Host 远程配置（mcpServers 风格）
+## MCP Host 配置（mcpServers 风格）
 
 ```json
 {
   "mcpServers": {
     "grok-search": {
-      "url": "http://your-server:8000/mcp/",
+      "url": "https://your-worker.your-domain.workers.dev/mcp/",
       "transportType": "streamable-http",
       "timeout": 600,
       "headers": {
@@ -61,4 +43,21 @@ docker compose up --build
 }
 ```
 
-说明：服务端会校验 `Authorization`，与 `GROK_PUBLIC_TOKEN` 一致才能调用。
+## 工具调用参数
+
+```json
+{
+  "tool": "grok_search",
+  "args": {
+    "query": "今天有什么新消息？",
+    "model": "grok-2-latest",
+    "timeout_seconds": 60
+  }
+}
+```
+
+## 安全说明
+
+- 服务端强制校验 `Authorization`（必须等于 `GROK_PUBLIC_TOKEN`）
+- 建议设置 `ALLOWED_ORIGINS` 限制来源
+- 上游 Grok 凭据仅保存在 Worker Secrets 中
