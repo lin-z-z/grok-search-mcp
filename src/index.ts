@@ -130,8 +130,7 @@ function buildGrokConfig(
   const model = (overrides.model || env.GROK_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
   const timeoutSeconds =
     overrides.timeoutSeconds ??
-    Number.parseFloat(env.GROK_TIMEOUT_SECONDS || "") ||
-    DEFAULT_TIMEOUT_SECONDS;
+    (Number.parseFloat(env.GROK_TIMEOUT_SECONDS || "") || DEFAULT_TIMEOUT_SECONDS);
 
   const extraBody = {
     ...parseJsonObject(env.GROK_EXTRA_BODY_JSON),

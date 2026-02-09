@@ -31,11 +31,11 @@ npx wrangler dev
 说明：推送到 `worker` 分支会自动部署。
 
 需要在 GitHub 仓库 Secrets 中配置：
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-- `GROK_BASE_URL`
-- `GROK_API_KEY`
-- `GROK_PUBLIC_TOKEN`
+1) `CLOUDFLARE_API_TOKEN`：Cloudflare API Token（需有 Workers 部署权限）
+2) `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账号 ID（Dashboard -> Workers -> Overview 可见）
+3) `GROK_BASE_URL`：上游 Grok 接口基础地址（如 `https://xxx.example`）
+4) `GROK_API_KEY`：上游 Grok API Key
+5) `GROK_PUBLIC_TOKEN`：对外访问令牌（MCP Host 的 Authorization Bearer）
 
 示例 Git 流程：
 
