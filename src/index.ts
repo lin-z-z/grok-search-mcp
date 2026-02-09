@@ -21,7 +21,7 @@ interface Env {
 }
 
 const MCP_PATHS = new Set(["/mcp", "/mcp/"]);
-const DEFAULT_MODEL = "grok-2-latest";
+const DEFAULT_MODEL = "grok-4";
 const DEFAULT_TIMEOUT_SECONDS = 60;
 const SERVER_NAME = "grok_search_worker";
 const SERVER_VERSION = "0.1.0";

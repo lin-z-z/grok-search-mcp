@@ -43,10 +43,12 @@ jobs:
           GROK_BASE_URL: ${{ secrets.GROK_BASE_URL }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           GROK_PUBLIC_TOKEN: ${{ secrets.GROK_PUBLIC_TOKEN }}
+          GROK_MODEL: ${{ secrets.GROK_MODEL }}
         run: |
           printf '%s' "$GROK_BASE_URL" | npx wrangler secret put GROK_BASE_URL
           printf '%s' "$GROK_API_KEY" | npx wrangler secret put GROK_API_KEY
           printf '%s' "$GROK_PUBLIC_TOKEN" | npx wrangler secret put GROK_PUBLIC_TOKEN
+          printf '%s' "$GROK_MODEL" | npx wrangler secret put GROK_MODEL
 
       # Deploy Worker
       - name: Deploy
