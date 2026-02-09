@@ -46,7 +46,21 @@ git commit -m "feat: update worker"
 git push origin worker
 ```
 
-## MCP Host 配置（mcpServers 风格）
+## MCP Host 配置（HTTP 格式）
+
+```json
+{
+  "type": "http",
+  "url": "https://your-worker.your-domain.workers.dev/mcp/",
+  "headers": {
+    "Authorization": "Bearer your-access-token"
+  }
+}
+```
+
+## Codex 配置（mcpServers）
+
+> 说明：这是 Codex `config.toml` / `mcpServers` 的写法，仅用于 Codex 配置文件。不要把它复制到只接受单体 HTTP JSON 的地方，否则可能被当作 stdio 解析。
 
 ```json
 {
