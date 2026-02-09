@@ -1,8 +1,8 @@
 # grok-search-mcp (Cloudflare Worker)
 
-## 部署
+## 部署（本地 wrangler）
 
-先配置机密（Secrets）：
+1) 设置 Worker Secrets：
 
 ```powershell
 npx wrangler secret put GROK_BASE_URL
@@ -10,20 +10,40 @@ npx wrangler secret put GROK_API_KEY
 npx wrangler secret put GROK_PUBLIC_TOKEN
 ```
 
-可选环境变量：
-`GROK_MODEL`, `GROK_TIMEOUT_SECONDS`, `GROK_EXTRA_BODY_JSON`, `GROK_EXTRA_HEADERS_JSON`, `ALLOWED_ORIGINS`
-
-部署：
+2) 部署：
 
 ```powershell
 npx wrangler deploy
 ```
+
+可选环境变量：
+`GROK_MODEL`, `GROK_TIMEOUT_SECONDS`, `GROK_EXTRA_BODY_JSON`, `GROK_EXTRA_HEADERS_JSON`, `ALLOWED_ORIGINS`
 
 ## 本地调试
 
 ```powershell
 copy .dev.vars.example .dev.vars
 npx wrangler dev
+```
+
+## GitHub Actions 自动部署
+
+说明：推送到 `worker` 分支会自动部署。
+
+需要在 GitHub 仓库 Secrets 中配置：
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `GROK_BASE_URL`
+- `GROK_API_KEY`
+- `GROK_PUBLIC_TOKEN`
+
+示例 Git 流程：
+
+```powershell
+git checkout worker
+git add -A
+git commit -m "feat: update worker"
+git push origin worker
 ```
 
 ## MCP Host 配置（mcpServers 风格）
