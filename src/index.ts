@@ -25,6 +25,12 @@ const DEFAULT_MODEL = "grok-4";
 const DEFAULT_TIMEOUT_SECONDS = 300;
 const MIN_TIMEOUT_SECONDS = 1;
 const MAX_TIMEOUT_SECONDS = 600;
+const BLOCKED_EXTRA_HEADER_NAMES = new Set([
+  "authorization",
+  "content-type",
+  "content-length",
+  "host",
+]);
 const SERVER_NAME = "grok_search_worker";
 const SERVER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -130,6 +136,14 @@ function truncateText(text: string, maxLength = 2000): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function upstreamConfigured(): Record<string, JsonValue> {
+  return { upstream: "configured" };
+}
+
+function isBlockedExtraHeader(name: string): boolean {
+  return BLOCKED_EXTRA_HEADER_NAMES.has(name.trim().toLowerCase());
+}
+
 function buildGrokConfig(
   env: Env,
   overrides: {
@@ -156,6 +170,9 @@ function buildGrokConfig(
   const extraHeadersOverride = parseJsonObject(overrides.extraHeadersJson);
   const extraHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries({ ...extraHeadersRaw, ...extraHeadersOverride })) {
+    if (isBlockedExtraHeader(key)) {
+      continue;
+    }
     if (typeof value === "string") {
       extraHeaders[key] = value;
     } else {
@@ -230,7 +247,7 @@ async function runGrokQuery(
         status: response.status,
         status_text: response.statusText,
         detail: truncateText(rawText),
-        base_url: config.baseUrl,
+        ...upstreamConfigured(),
         model: config.model,
         timeout_seconds: config.timeoutSeconds,
         elapsed_ms: Date.now() - started,
@@ -246,7 +263,7 @@ async function runGrokQuery(
           error: "upstream_invalid_json",
           detail: "Upstream response JSON is not an object.",
           raw: truncateText(rawText),
-          base_url: config.baseUrl,
+          ...upstreamConfigured(),
           model: config.model,
           timeout_seconds: config.timeoutSeconds,
           elapsed_ms: Date.now() - started,
@@ -260,7 +277,7 @@ async function runGrokQuery(
         error: "upstream_invalid_json",
         detail,
         raw: truncateText(rawText),
-        base_url: config.baseUrl,
+        ...upstreamConfigured(),
         model: config.model,
         timeout_seconds: config.timeoutSeconds,
         elapsed_ms: Date.now() - started,
@@ -308,7 +325,7 @@ async function runGrokQuery(
     return {
       ok: true,
       query,
-      base_url: config.baseUrl,
+      ...upstreamConfigured(),
       model: payload.model ?? config.model,
       content,
       sources,
@@ -323,7 +340,7 @@ async function runGrokQuery(
       ok: false,
       error: "request_failed",
       detail,
-      base_url: config.baseUrl,
+      ...upstreamConfigured(),
       model: config.model,
       timeout_seconds: config.timeoutSeconds,
       elapsed_ms: Date.now() - started,

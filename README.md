@@ -97,3 +97,5 @@ git push origin worker
 - 服务端强制校验 `Authorization`（必须等于 `GROK_PUBLIC_TOKEN`）
 - 建议设置 `ALLOWED_ORIGINS` 限制来源
 - 上游 Grok 凭据仅保存在 Worker Secrets 中
+- `extra_headers_json` 不允许覆盖 `Authorization`、`Content-Type`、`Content-Length`、`Host`
+- 工具返回不会暴露完整 `GROK_BASE_URL`，只返回 `upstream: "configured"`
