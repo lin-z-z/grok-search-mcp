@@ -99,3 +99,4 @@ git push origin worker
 - 上游 Grok 凭据仅保存在 Worker Secrets 中
 - `extra_headers_json` 不允许覆盖 `Authorization`、`Content-Type`、`Content-Length`、`Host`
 - 工具返回不会暴露完整 `GROK_BASE_URL`，只返回 `upstream: "configured"`
+- 浏览器预检请求支持 `OPTIONS`；JSON-RPC batch 会按最多 3 个并发处理

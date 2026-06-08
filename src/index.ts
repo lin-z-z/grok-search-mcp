@@ -31,27 +31,28 @@ const BLOCKED_EXTRA_HEADER_NAMES = new Set([
   "content-length",
   "host",
 ]);
+const BATCH_CONCURRENCY = 3;
 const SERVER_NAME = "grok_search_worker";
 const SERVER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = "2025-06-18";
 
-function jsonResponse(body: JsonValue, status = 200): Response {
+function jsonResponse(body: JsonValue, status = 200, extraHeaders?: HeadersInit): Response {
+  const headers = new Headers(extraHeaders);
+  headers.set("Content-Type", "application/json");
+  headers.set("Cache-Control", "no-store");
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-    },
+    headers,
   });
 }
 
-function textResponse(text: string, status = 200): Response {
+function textResponse(text: string, status = 200, extraHeaders?: HeadersInit): Response {
+  const headers = new Headers(extraHeaders);
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
   return new Response(text, {
     status,
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
+    headers,
   });
 }
 
@@ -68,6 +69,19 @@ function parseAllowedOrigins(value?: string): Set<string> {
 function isOriginAllowed(origin: string, allowed: Set<string>): boolean {
   if (allowed.size === 0) return true;
   return allowed.has(origin);
+}
+
+function corsHeaders(origin: string | null, allowed: Set<string>): Headers {
+  const headers = new Headers({
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  });
+  if (origin && isOriginAllowed(origin, allowed)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+  }
+  return headers;
 }
 
 function extractBearerToken(header: string | null): string {
@@ -357,6 +371,27 @@ function buildToolResult(result: Record<string, JsonValue>): Record<string, Json
   };
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(limit, items.length);
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 async function handleJsonRpcMessage(
   message: Record<string, JsonValue>,
   env: Env,
@@ -459,8 +494,13 @@ async function handleJsonRpcMessage(
 async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
   const origin = request.headers.get("Origin");
   const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS);
+  const headers = corsHeaders(origin, allowedOrigins);
   if (origin && !isOriginAllowed(origin, allowedOrigins)) {
-    return textResponse("Forbidden", 403);
+    return textResponse("Forbidden", 403, headers);
+  }
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers });
   }
 
   const token = extractBearerToken(request.headers.get("Authorization"));
@@ -468,11 +508,12 @@ async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
     return jsonResponse(
       { jsonrpc: "2.0", id: null, error: { code: 401, message: "Unauthorized" } },
       401,
+      headers,
     );
   }
 
   if (request.method !== "POST") {
-    return textResponse("Method Not Allowed", 405);
+    return textResponse("Method Not Allowed", 405, headers);
   }
 
   const rawText = await request.text();
@@ -480,34 +521,33 @@ async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
   try {
     payload = JSON.parse(rawText);
   } catch {
-    return jsonResponse({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
+    return jsonResponse({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400, headers);
   }
 
   if (Array.isArray(payload)) {
-    const responses: Record<string, JsonValue>[] = [];
-    for (const item of payload) {
+    const results = await mapWithConcurrency(payload, BATCH_CONCURRENCY, async (item) => {
       if (!item || typeof item !== "object") {
-        responses.push({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
-        continue;
+        return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } };
       }
       const result = await handleJsonRpcMessage(item as Record<string, JsonValue>, env);
-      if (result) responses.push(result);
-    }
+      return result;
+    });
+    const responses = results.filter((result): result is Record<string, JsonValue> => result !== null);
     if (responses.length === 0) {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers });
     }
-    return jsonResponse(responses);
+    return jsonResponse(responses, 200, headers);
   }
 
   if (!payload || typeof payload !== "object") {
-    return jsonResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } }, 400);
+    return jsonResponse({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } }, 400, headers);
   }
 
   const result = await handleJsonRpcMessage(payload as Record<string, JsonValue>, env);
   if (!result) {
-    return new Response(null, { status: 204 });
+    return new Response(null, { status: 204, headers });
   }
-  return jsonResponse(result);
+  return jsonResponse(result, 200, headers);
 }
 
 export default {
