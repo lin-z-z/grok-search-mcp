@@ -100,3 +100,4 @@ git push origin worker
 - `extra_headers_json` 不允许覆盖 `Authorization`、`Content-Type`、`Content-Length`、`Host`
 - 工具返回不会暴露完整 `GROK_BASE_URL`，只返回 `upstream: "configured"`
 - 浏览器预检请求支持 `OPTIONS`；JSON-RPC batch 会按最多 3 个并发处理
+- 请求上游时会强制 `stream: false`；如果上游仍返回 SSE `data:` chunk，服务端会合并 chunk 后再解析

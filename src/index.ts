@@ -126,8 +126,12 @@ function extractUrls(text: string): string[] {
 }
 
 function coerceJsonObject(text: string): Record<string, JsonValue> | null {
-  const trimmed = text.trim();
+  let trimmed = text.trim();
   if (!trimmed) return null;
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) {
+    trimmed = fenced[1].trim();
+  }
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
   try {
     const parsed = JSON.parse(trimmed);
@@ -156,6 +160,98 @@ function upstreamConfigured(): Record<string, JsonValue> {
 
 function isBlockedExtraHeader(name: string): boolean {
   return BLOCKED_EXTRA_HEADER_NAMES.has(name.trim().toLowerCase());
+}
+
+function parseSseCompletionPayload(rawText: string): Record<string, JsonValue> | null {
+  if (!rawText.trimStart().startsWith("data:")) return null;
+
+  let content = "";
+  let model: JsonValue = "";
+  let usage: JsonValue = {};
+  let parsedAnyChunk = false;
+
+  for (const event of rawText.split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .map((line) => line.trimStart())
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(data);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const chunk = parsed as Record<string, JsonValue>;
+      parsedAnyChunk = true;
+      model = chunk.model ?? model;
+      usage = chunk.usage ?? usage;
+
+      const choices = chunk.choices;
+      if (!Array.isArray(choices)) {
+        continue;
+      }
+      const choice = choices[0];
+      if (!choice || typeof choice !== "object" || Array.isArray(choice)) {
+        continue;
+      }
+      const choiceObject = choice as Record<string, JsonValue>;
+      const delta = choiceObject.delta;
+      const message = choiceObject.message;
+      if (delta && typeof delta === "object" && !Array.isArray(delta)) {
+        const deltaContent = (delta as Record<string, JsonValue>).content;
+        if (typeof deltaContent === "string") {
+          content += deltaContent;
+        }
+      }
+      if (message && typeof message === "object" && !Array.isArray(message)) {
+        const messageContent = (message as Record<string, JsonValue>).content;
+        if (typeof messageContent === "string") {
+          content += messageContent;
+        }
+      }
+    } catch {}
+  }
+
+  if (!parsedAnyChunk) return null;
+  return {
+    object: "chat.completion",
+    model,
+    choices: [{ message: { content } }],
+    usage,
+    response_format: "sse",
+  };
+}
+
+function parseCompletionPayload(rawText: string): {
+  payload?: Record<string, JsonValue>;
+  detail?: string;
+  raw?: string;
+} {
+  const ssePayload = parseSseCompletionPayload(rawText);
+  if (ssePayload) {
+    return { payload: ssePayload };
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        detail: "Upstream response JSON is not an object.",
+        raw: truncateText(rawText),
+      };
+    }
+    return { payload: parsed as Record<string, JsonValue> };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { detail, raw: truncateText(rawText) };
+  }
 }
 
 function buildGrokConfig(
@@ -231,8 +327,8 @@ async function runGrokQuery(
       { role: "user", content: query },
     ],
     temperature: 0.2,
-    stream: false,
     ...config.extraBody,
+    stream: false,
   };
 
   const headers = new Headers({
@@ -268,35 +364,20 @@ async function runGrokQuery(
       };
     }
 
-    let payload: Record<string, JsonValue>;
-    try {
-      const parsed = JSON.parse(rawText);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return {
-          ok: false,
-          error: "upstream_invalid_json",
-          detail: "Upstream response JSON is not an object.",
-          raw: truncateText(rawText),
-          ...upstreamConfigured(),
-          model: config.model,
-          timeout_seconds: config.timeoutSeconds,
-          elapsed_ms: Date.now() - started,
-        };
-      }
-      payload = parsed as Record<string, JsonValue>;
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+    const parsedPayload = parseCompletionPayload(rawText);
+    if (!parsedPayload.payload) {
       return {
         ok: false,
         error: "upstream_invalid_json",
-        detail,
-        raw: truncateText(rawText),
+        detail: parsedPayload.detail ?? "Unable to parse upstream response.",
+        raw: parsedPayload.raw ?? truncateText(rawText),
         ...upstreamConfigured(),
         model: config.model,
         timeout_seconds: config.timeoutSeconds,
         elapsed_ms: Date.now() - started,
       };
     }
+    const payload = parsedPayload.payload;
 
     let message = "";
     try {
@@ -345,6 +426,7 @@ async function runGrokQuery(
       sources,
       raw,
       usage: payload.usage ?? {},
+      response_format: payload.response_format ?? "json",
       timeout_seconds: config.timeoutSeconds,
       elapsed_ms: Date.now() - started,
     };
