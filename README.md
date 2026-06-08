@@ -19,6 +19,8 @@ npx wrangler deploy
 可选环境变量：
 `GROK_MODEL`, `GROK_TIMEOUT_SECONDS`, `GROK_EXTRA_BODY_JSON`, `GROK_EXTRA_HEADERS_JSON`, `ALLOWED_ORIGINS`
 
+`GROK_TIMEOUT_SECONDS` 默认 `300`，允许范围 `1-600`；工具调用里的 `timeout_seconds` 会覆盖环境变量，但同样会被限制在该范围内。
+
 ## 本地调试
 
 ```powershell
@@ -85,7 +87,7 @@ git push origin worker
   "args": {
     "query": "今天有什么新消息？",
     "model": "grok-2-latest",
-    "timeout_seconds": 60
+    "timeout_seconds": 300
   }
 }
 ```

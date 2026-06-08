@@ -22,7 +22,9 @@ interface Env {
 
 const MCP_PATHS = new Set(["/mcp", "/mcp/"]);
 const DEFAULT_MODEL = "grok-4";
-const DEFAULT_TIMEOUT_SECONDS = 60;
+const DEFAULT_TIMEOUT_SECONDS = 300;
+const MIN_TIMEOUT_SECONDS = 1;
+const MAX_TIMEOUT_SECONDS = 600;
 const SERVER_NAME = "grok_search_worker";
 const SERVER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -116,6 +118,18 @@ function coerceJsonObject(text: string): Record<string, JsonValue> | null {
   return null;
 }
 
+function clampTimeoutSeconds(value?: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_TIMEOUT_SECONDS;
+  }
+  return Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, Math.floor(value)));
+}
+
+function truncateText(text: string, maxLength = 2000): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
 function buildGrokConfig(
   env: Env,
   overrides: {
@@ -128,9 +142,10 @@ function buildGrokConfig(
   const baseUrl = normalizeBaseUrl(env.GROK_BASE_URL || "");
   const apiKey = (env.GROK_API_KEY || "").trim();
   const model = (overrides.model || env.GROK_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
-  const timeoutSeconds =
+  const timeoutSeconds = clampTimeoutSeconds(
     overrides.timeoutSeconds ??
-    (Number.parseFloat(env.GROK_TIMEOUT_SECONDS || "") || DEFAULT_TIMEOUT_SECONDS);
+      Number.parseFloat(env.GROK_TIMEOUT_SECONDS || ""),
+  );
 
   const extraBody = {
     ...parseJsonObject(env.GROK_EXTRA_BODY_JSON),
@@ -208,7 +223,49 @@ async function runGrokQuery(
       signal: controller.signal,
     });
     const rawText = await response.text();
-    const payload = JSON.parse(rawText);
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: "upstream_http_error",
+        status: response.status,
+        status_text: response.statusText,
+        detail: truncateText(rawText),
+        base_url: config.baseUrl,
+        model: config.model,
+        timeout_seconds: config.timeoutSeconds,
+        elapsed_ms: Date.now() - started,
+      };
+    }
+
+    let payload: Record<string, JsonValue>;
+    try {
+      const parsed = JSON.parse(rawText);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: "upstream_invalid_json",
+          detail: "Upstream response JSON is not an object.",
+          raw: truncateText(rawText),
+          base_url: config.baseUrl,
+          model: config.model,
+          timeout_seconds: config.timeoutSeconds,
+          elapsed_ms: Date.now() - started,
+        };
+      }
+      payload = parsed as Record<string, JsonValue>;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        error: "upstream_invalid_json",
+        detail,
+        raw: truncateText(rawText),
+        base_url: config.baseUrl,
+        model: config.model,
+        timeout_seconds: config.timeoutSeconds,
+        elapsed_ms: Date.now() - started,
+      };
+    }
 
     let message = "";
     try {
@@ -257,6 +314,7 @@ async function runGrokQuery(
       sources,
       raw,
       usage: payload.usage ?? {},
+      timeout_seconds: config.timeoutSeconds,
       elapsed_ms: Date.now() - started,
     };
   } catch (error) {
@@ -267,6 +325,7 @@ async function runGrokQuery(
       detail,
       base_url: config.baseUrl,
       model: config.model,
+      timeout_seconds: config.timeoutSeconds,
       elapsed_ms: Date.now() - started,
     };
   } finally {
